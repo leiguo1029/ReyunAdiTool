@@ -20,7 +20,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
 import com.fear1ess.reyunaditool.cmd.OperateCmd;
-import com.fear1ess.reyunaditool.cmd.WSConnectCmd;
+import com.fear1ess.reyunaditool.cmd.WSConnectCmd.ClientCmd;
 import com.fear1ess.reyunaditool.server.NanoWSD;
 import com.fear1ess.reyunaditool.thread.DownloadThread;
 import com.fear1ess.reyunaditool.thread.InstallAndStartAppThread;
@@ -41,11 +41,18 @@ public class DoCommandService extends Service  {
     private String mCurPkgName;
     private String mCurDownloadPath;
 
+    private WSCommandServer.WSCommandWebSocket mWebSocket;
+    private volatile boolean isWSConnected = false;
+
     private Handler mUiHandler;
 
     private InstallAndStartAppThread mInstallAndStartAppThread;
 
     private Binder mBinder = new DoCommandBinder();
+
+    public NanoWSD.WebSocket getWebSocket(){
+        return mWebSocket;
+    }
 
 
     @Nullable
@@ -106,7 +113,7 @@ public class DoCommandService extends Service  {
         mUiHandler = app.getUiHandler();
         Context cxt = AdiToolApp.getAppContext();
         ExecutorService es = Executors.newCachedThreadPool();
-        DownloadThread dlt = new DownloadThread(cxt, mUiHandler);
+        DownloadThread dlt = new DownloadThread(cxt, mUiHandler, this);
         InstallAndStartAppThread hat = new InstallAndStartAppThread(dlt, cxt, mUiHandler,this);
         es.execute(dlt);
         es.execute(hat);
@@ -168,20 +175,23 @@ public class DoCommandService extends Service  {
 
             @Override
             protected void onOpen() {
-                Log.d(TAG, "server is connected by other device...");
-                try {
-                    WebSocketFrame pingFrame = new WebSocketFrame(WebSocketFrame.OpCode.Ping,false,"");
-                    ping(pingFrame.getBinaryPayload());
-                } catch (CharacterCodingException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                if(isWSConnected){
+                    try {
+                        String str = "server has been connected by other device...";
+                        send(new WebSocketFrame.CloseFrame(WebSocketFrame.CloseCode.GoingAway, str).getBinaryPayload());
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
                 }
+                Log.d(TAG, "a client success to connect server...");
+                mWebSocket = this;
             }
 
             @Override
             protected void onClose(WebSocketFrame.CloseCode code, String reason, boolean initiatedByRemote) {
-
+                Log.d(TAG, "onClose: ");
+                isWSConnected = false;
+                mWebSocket = null;
             }
 
             @Override
@@ -193,10 +203,10 @@ public class DoCommandService extends Service  {
                     if(!jo.has("cmd")) send("error data format!");
                     int cmd = jo.getInt("cmd");
                     switch (cmd){
-                        case WSConnectCmd.START_OPERATE_APP:
+                        case ClientCmd.START_OPERATE_APP:
                             startOperateAppThread();
                             break;
-                        case WSConnectCmd.STOP_SERVICE:
+                        case ClientCmd.STOP_SERVICE:
                             stopSelf();
                             break;
                         default: break;
@@ -208,12 +218,12 @@ public class DoCommandService extends Service  {
 
             @Override
             protected void onPong(WebSocketFrame pong) {
-
+                Log.d(TAG, "onPong: ");
             }
 
             @Override
             protected void onException(IOException exception) {
-
+                Log.d(TAG, "onException: ");
             }
         }
 

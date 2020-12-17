@@ -1,6 +1,11 @@
 package com.fear1ess.reyunaditool.thread;
 
+import android.app.Application;
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Message;
 import android.util.Log;
@@ -12,7 +17,12 @@ import com.fear1ess.reyunaditool.DoCommandService;
 import com.fear1ess.reyunaditool.ExecuteCmdUtils;
 import com.fear1ess.reyunaditool.NetWorkUtils;
 import com.fear1ess.reyunaditool.cmd.OperateCmd;
+import com.fear1ess.reyunaditool.state.AppState;
 import com.fear1ess.reyunaditool.thread.DownloadThread;
+import com.fear1ess.reyunaditool.utils.PushMsgUtils;
+
+import java.io.IOException;
+import java.util.List;
 
 
 public class InstallAndStartAppThread extends Thread {
@@ -79,6 +89,11 @@ public class InstallAndStartAppThread extends Thread {
                 mDownloadPath = appInfo.mDownloadPath;
                 mService.setCurApp(mPkgName,mDownloadPath);
 
+                //send app installing msg...
+                String msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
+                        AppState.APP_INSTALLING);
+                mService.getWebSocket().send(msg);
+
                 int res = ExecuteCmdUtils.installApp(mDownloadPath);
 
                 if(res == 0){
@@ -90,8 +105,19 @@ public class InstallAndStartAppThread extends Thread {
                     if(ExecuteCmdUtils.deletePkg(mDownloadPath) != 0){
                         Log.e(TAG, "delete pkg " + mDownloadPath + " failed!");
                     }
+                    //send app installing msg...
+                    msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
+                            AppState.APP_INSTALL_FAILED);
+                    mService.getWebSocket().send(msg);
                     continue;
                 }
+
+                //send app installed msg, update appname and appicon...
+                PackageManager pm = appContext.getPackageManager();
+                ApplicationInfo info = PushMsgUtils.getApplicationInfo(mPkgName);
+                msg = PushMsgUtils.createPushMsg(mPkgName, info.loadLabel(pm).toString(), info.loadIcon(pm),
+                        AppState.APP_INSTALLED_AND_OPEN);
+                mService.getWebSocket().send(msg);
 
                 if(ExecuteCmdUtils.startApp(appContext,mPkgName) != 0){
                     Log.e(TAG, "start app " + mPkgName + " failed!");
@@ -104,10 +130,15 @@ public class InstallAndStartAppThread extends Thread {
                     continue;
                 }
 
+                //send checking msg
+                msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
+                        AppState.APP_ADSDK_CHECKING);
+                mService.getWebSocket().send(msg);
+
                 break;
 
             }
-        } catch (InterruptedException e) {
+        } catch (InterruptedException | IOException e) {
             e.printStackTrace();
         }
 

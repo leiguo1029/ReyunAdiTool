@@ -7,16 +7,21 @@ import android.os.Handler;
 import android.util.Log;
 
 import com.fear1ess.reyunaditool.AppInfo;
+import com.fear1ess.reyunaditool.DoCommandService;
 import com.fear1ess.reyunaditool.ExecuteCmdUtils;
 import com.fear1ess.reyunaditool.NetWorkUtils;
+import com.fear1ess.reyunaditool.state.AppState;
+import com.fear1ess.reyunaditool.utils.PushMsgUtils;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.LinkedBlockingQueue;
 
 
 public class DownloadThread extends Thread {
     private Handler mainUiHandler;
     private Context appContext;
+    private DoCommandService mService;
 
     private int MAX_APPHANDLE_SIZE = 2;
     public LinkedBlockingQueue<AppInfo> mAppInfoQueue = new LinkedBlockingQueue<>(MAX_APPHANDLE_SIZE);
@@ -32,14 +37,21 @@ public class DownloadThread extends Thread {
         if(!fi.exists()) fi.mkdirs();
     }
 
-    public DownloadThread(Context cxt, Handler handler) {
+    public DownloadThread(Context cxt, Handler handler, DoCommandService doCommandService) {
         appContext = cxt;
         mainUiHandler = handler;
+        mService = doCommandService;
     }
-
 
     public String downloadApp(String downloadUrl, String downloadPath) {
         Log.d(TAG, "downloadApp...");
+        String msg = PushMsgUtils.createPushMsg("unknown package", null, null,
+                AppState.APP_INSTALLING);
+        try {
+            mService.getWebSocket().send(msg);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         NetWorkUtils.Response res = NetWorkUtils.download(downloadUrl,null,null,downloadPath);
         if(res == null) return null;
         return res.resFileName;
@@ -58,12 +70,21 @@ public class DownloadThread extends Thread {
             String packageName = fileName.replace(".apk","");
             String downloadPath = downloadDir + "/" + fileName;
             try {
+                if(packageName.startsWith("rycache_")){
+                    Log.d(TAG, "find app cache,delete it...");
+                    ExecuteCmdUtils.deletePkg(downloadPath);
+                    continue;
+                }
                 mAppInfoQueue.put(new AppInfo(packageName, downloadPath));
-            } catch (InterruptedException e) {
+                String msg = PushMsgUtils.createPushMsg(packageName, null, null,
+                        AppState.APP_DOWNLOADED_AND_PARPARE_TO_INSTALL);
+                mService.getWebSocket().send(msg);
+            } catch (InterruptedException | IOException e) {
                 e.printStackTrace();
             }
         }
     }
+
 
     public void downloadAppLoop(){
         while(true){
@@ -74,8 +95,9 @@ public class DownloadThread extends Thread {
             }
 
             String ts = String.valueOf(System.currentTimeMillis());
-            String downloadPath = downloadDir + "/" + ts + ".apk";
-            String res = downloadApp(downloadAppUrlStr, downloadPath);
+            String downloadPath = downloadDir + "/" + "rycache_" + ts + ".apk";
+            String res = null;
+            res = downloadApp(downloadAppUrlStr, downloadPath);
 
             if(res == null) {
                 ExecuteCmdUtils.deletePkg(downloadPath);
@@ -88,7 +110,10 @@ public class DownloadThread extends Thread {
 
             try {
                 mAppInfoQueue.put(new AppInfo(pkgName, newPath));
-            } catch (InterruptedException e) {
+                String msg = PushMsgUtils.createPushMsg(pkgName, null, null,
+                        AppState.APP_DOWNLOADED_AND_PARPARE_TO_INSTALL);
+                mService.getWebSocket().send(msg);
+            } catch (InterruptedException | IOException e) {
                 e.printStackTrace();
             }
         }
