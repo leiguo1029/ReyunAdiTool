@@ -1,24 +1,21 @@
 package com.fear1ess.reyunaditool.thread;
 
-import android.app.Application;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Message;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import com.fear1ess.reyunaditool.AdiToolApp;
 import com.fear1ess.reyunaditool.AppInfo;
 import com.fear1ess.reyunaditool.DoCommandService;
 import com.fear1ess.reyunaditool.ExecuteCmdUtils;
 import com.fear1ess.reyunaditool.NetWorkUtils;
 import com.fear1ess.reyunaditool.cmd.OperateCmd;
 import com.fear1ess.reyunaditool.state.AppState;
-import com.fear1ess.reyunaditool.thread.DownloadThread;
 import com.fear1ess.reyunaditool.utils.PushMsgUtils;
 
 import java.io.IOException;
@@ -34,6 +31,7 @@ public class InstallAndStartAppThread extends Thread {
     private Context appContext;
     private DownloadThread mDownloadThread;
     private volatile boolean mNeedWait = false;
+    private volatile boolean needRunning = true;
 
     public static String postAppInfoUrlStr = "http://adfly-api.adinsights-global.com/get_app_res/?ua=android";
 
@@ -50,16 +48,32 @@ public class InstallAndStartAppThread extends Thread {
         mNeedWait = needWait;
     }
 
+    public void removeApp(){
+        if(ExecuteCmdUtils.finishApp(mPkgName) != 0){
+            Log.e(TAG, "finish app " + mPkgName + " failed!");
+        }
+        if(ExecuteCmdUtils.uninstallApp(mPkgName) != 0){
+            Log.e(TAG, "uninstall app " + mPkgName + " failed!");
+        }
+        if(ExecuteCmdUtils.deletePkg(mDownloadPath) != 0){
+            Log.e(TAG, "delete pkg " + mDownloadPath + " failed!");
+        }
+    }
+
+    public void exit() {
+        needRunning = false;
+    }
+
     @Override
     public void run() {
-        while(true){
+        while(needRunning){
             try {
-                sleep(5000);
+                installAndStartNewApp();
+                sleep(80*1000);
+                removeApp();
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            if(mNeedWait) continue;
-            installAndStartNewApp();
             mNeedWait = true;
         }
 
@@ -79,10 +93,20 @@ public class InstallAndStartAppThread extends Thread {
         Looper.loop();*/
     }
 
+    public boolean isAppExists(String pkgName){
+        PackageManager pm = AdiToolApp.getAppContext().getPackageManager();
+        List<ApplicationInfo> packageInfos = pm.getInstalledApplications(0);
+        for(ApplicationInfo ai : packageInfos) {
+            if(ai.packageName.equals(pkgName)) return true;
+        }
+        return false;
+    }
+
     public synchronized void installAndStartNewApp() {
         AppInfo appInfo = null;
         try {
             while(true){
+                Thread.sleep(3000);
                 appInfo = mDownloadThread.mAppInfoQueue.take();
 
                 mPkgName = appInfo.mPkgName;
@@ -92,24 +116,26 @@ public class InstallAndStartAppThread extends Thread {
                 //send app installing msg...
                 String msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
                         AppState.APP_INSTALLING);
-                mService.getWebSocket().send(msg);
+                mService.sendMsgToClient(msg);
 
-                int res = ExecuteCmdUtils.installApp(mDownloadPath);
 
-                if(res == 0){
-                    Log.d(TAG, "install app " + mPkgName + "success!");
-                }else if(res == 1){
-                    Log.d(TAG, mPkgName + " is already existed, skip install");
-                }else {
-                    Log.e(TAG, "install app " + mPkgName + " failed!");
-                    if(ExecuteCmdUtils.deletePkg(mDownloadPath) != 0){
-                        Log.e(TAG, "delete pkg " + mDownloadPath + " failed!");
+                if(!isAppExists(mPkgName)){
+                    int res = ExecuteCmdUtils.installApp(mDownloadPath);
+                    if(res == 0){
+                        Log.d(TAG, "install app " + mPkgName + "success!");
+                    } else {
+                        Log.e(TAG, "install app " + mPkgName + " failed!");
+                        if(ExecuteCmdUtils.deletePkg(mDownloadPath) != 0){
+                            Log.e(TAG, "delete pkg " + mDownloadPath + " failed!");
+                        }
+                        //send app installing msg...
+                        msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
+                                AppState.APP_INSTALL_FAILED);
+                        mService.sendMsgToClient(msg);
+                        continue;
                     }
-                    //send app installing msg...
-                    msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
-                            AppState.APP_INSTALL_FAILED);
-                    mService.getWebSocket().send(msg);
-                    continue;
+                }else{
+                    Log.d(TAG, mPkgName + " is already existed, skip install");
                 }
 
                 //send app installed msg, update appname and appicon...
@@ -117,7 +143,7 @@ public class InstallAndStartAppThread extends Thread {
                 ApplicationInfo info = PushMsgUtils.getApplicationInfo(mPkgName);
                 msg = PushMsgUtils.createPushMsg(mPkgName, info.loadLabel(pm).toString(), info.loadIcon(pm),
                         AppState.APP_INSTALLED_AND_OPEN);
-                mService.getWebSocket().send(msg);
+                mService.sendMsgToClient(msg);
 
                 if(ExecuteCmdUtils.startApp(appContext,mPkgName) != 0){
                     Log.e(TAG, "start app " + mPkgName + " failed!");
@@ -133,12 +159,10 @@ public class InstallAndStartAppThread extends Thread {
                 //send checking msg
                 msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
                         AppState.APP_ADSDK_CHECKING);
-                mService.getWebSocket().send(msg);
-
+                mService.sendMsgToClient(msg);
                 break;
-
             }
-        } catch (InterruptedException | IOException e) {
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
 

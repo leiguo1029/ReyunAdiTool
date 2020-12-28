@@ -5,6 +5,7 @@ import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -33,17 +34,32 @@ public class MainActivity extends AppCompatActivity {
         app.setUiHandler(mHandler);
 
         Button startBtn = findViewById(R.id.start_btn);
+        Button stopBtn = findViewById(R.id.stop_btn);
+        stopBtn.setEnabled(false);
 
         requestPermissions(new String[]{"android.permission.WRITE_EXTERNAL_STORAGE",
                 "android.permission.READ_EXTERNAL_STORAGE"},100);
 
-        Context cxt = AdiToolApp.getAppContext();
-        cxt.startForegroundService(new Intent(cxt, DoCommandService.class));
 
         startBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                startBtn.setText("Working");
+                startBtn.setEnabled(false);
+                stopBtn.setEnabled(true);
+                Context cxt = AdiToolApp.getAppContext();
+                cxt.startForegroundService(new Intent(cxt, DoCommandService.class));
+            }
+        });
 
+        stopBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Context cxt = AdiToolApp.getAppContext();
+                stopService(new Intent(cxt, DoCommandService.class));
+                startBtn.setText("Start");
+                startBtn.setEnabled(true);
+                stopBtn.setEnabled(false);
             }
         });
     }

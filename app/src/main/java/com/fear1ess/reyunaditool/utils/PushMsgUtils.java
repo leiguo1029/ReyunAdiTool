@@ -23,12 +23,38 @@ import java.io.IOException;
 import java.util.List;
 
 public class PushMsgUtils {
-    public static String createPushMsg(String pkgName, String appName, Drawable icon, int state){
+    public static String createAdsPushMsg(String pkgName, int sdkState, int adsFoundFlag){
+        if(pkgName == null) return null;
+        try {
+            JSONObject jo = new JSONObject();
+            jo.put("package_name",pkgName);
+            if(sdkState != 0){
+                jo.put("sdk_state", sdkState);
+            }
+            if(adsFoundFlag != 0){
+                jo.put("ads_found_flag", adsFoundFlag);
+            }
+            JSONObject jo2 = new JSONObject();
+            jo2.put("data", jo);
+            jo2.put("cmd", ServerCmd.NEW_ADS_PUSH_MSG);
+            return jo2.toString();
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    public static String createPushMsg(String pkgName, String appName, Drawable icon, int state) {
+        return createPushMsg(pkgName, appName, icon, 0, state);
+    }
+
+    public static String createPushMsg(String pkgName, String appName, Drawable icon, int bytesDownloaded, int state){
         if(pkgName == null) return null;
         try {
             JSONObject jo = new JSONObject();
             jo.put("package_name",pkgName);
             jo.put("state", state);
+            jo.put("bytes_downloaded", bytesDownloaded);
             if(appName != null){
                 jo.put("app_name", appName);
             }
@@ -42,7 +68,7 @@ public class PushMsgUtils {
             }
             JSONObject jo2 = new JSONObject();
             jo2.put("data", jo);
-            jo2.put("cmd", ServerCmd.NEW_PUSH_MSG);
+            jo2.put("cmd", ServerCmd.NEW_APP_PUSH_MSG);
             return jo2.toString();
         } catch (JSONException | IOException e) {
             e.printStackTrace();

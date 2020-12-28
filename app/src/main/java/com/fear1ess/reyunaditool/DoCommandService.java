@@ -20,12 +20,14 @@ import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
 import com.fear1ess.reyunaditool.cmd.OperateCmd;
+import com.fear1ess.reyunaditool.cmd.WSConnectCmd;
 import com.fear1ess.reyunaditool.cmd.WSConnectCmd.ClientCmd;
 import com.fear1ess.reyunaditool.server.NanoWSD;
 import com.fear1ess.reyunaditool.thread.DownloadThread;
 import com.fear1ess.reyunaditool.thread.InstallAndStartAppThread;
 import com.fear1ess.reyunaditool.thread.RemoveAppProceduce;
 import com.fear1ess.reyunaditool.thread.UploadAdsDataProceduce;
+import com.fear1ess.reyunaditool.utils.PushMsgUtils;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -41,12 +43,15 @@ public class DoCommandService extends Service  {
     private String mCurPkgName;
     private String mCurDownloadPath;
 
+    private String mCurAdsStateStr;
+
     private WSCommandServer.WSCommandWebSocket mWebSocket;
     private volatile boolean isWSConnected = false;
 
     private Handler mUiHandler;
 
     private InstallAndStartAppThread mInstallAndStartAppThread;
+    private DownloadThread mDownloadAppThread;
 
     private Binder mBinder = new DoCommandBinder();
 
@@ -104,7 +109,18 @@ public class DoCommandService extends Service  {
             e.printStackTrace();
         }
 
+        startOperateAppThread();
+
         return Service.START_NOT_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        Log.d(TAG, "onDestroy: ....");
+        mInstallAndStartAppThread.exit();
+        mDownloadAppThread.exit();
+        stopForeground(true);
     }
 
     public void startOperateAppThread(){
@@ -117,7 +133,19 @@ public class DoCommandService extends Service  {
         InstallAndStartAppThread hat = new InstallAndStartAppThread(dlt, cxt, mUiHandler,this);
         es.execute(dlt);
         es.execute(hat);
+        mInstallAndStartAppThread = hat;
+        mDownloadAppThread = dlt;
         es.shutdown();
+    }
+
+
+    public void sendMsgToClient(String str){
+        if(!isWSConnected) return;
+        try {
+            mWebSocket.send(str);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public void setCurApp(String pkgName,String downloadPath){
@@ -141,16 +169,31 @@ public class DoCommandService extends Service  {
                 }
                 case OperateCmd.UPLOAD_ADSDK_INFO: {
                     ExecutorService es = Executors.newSingleThreadExecutor();
+                    Log.d(TAG, "start upload ads data: " + str);
                     es.execute(new UploadAdsDataProceduce(str));
                     es.shutdown();
                     return "success";
                 }
                 case OperateCmd.SHUTDOWN_APP: {
                     ExecutorService es = Executors.newSingleThreadExecutor();
-                    es.execute(new RemoveAppProceduce(mInstallAndStartAppThread, mCurPkgName, mCurDownloadPath));
+                    es.execute(new RemoveAppProceduce(mInstallAndStartAppThread, mCurPkgName, mCurDownloadPath, DoCommandService.this));
                     es.shutdown();
                     return "success";
                 }
+                case OperateCmd.UPLOAD_ADSDK_EXISTS_STATE: {
+                    try {
+                        if(mWebSocket != null){
+                            mCurAdsStateStr = str;
+                            JSONObject sendjo = new JSONObject(str);
+                            sendjo.put("cmd", WSConnectCmd.ServerCmd.NEW_ADS_PUSH_MSG);
+                            sendMsgToClient(sendjo.toString());
+                        }
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                    return "success";
+                }
+
                 default: return null;
             }
         }
@@ -208,6 +251,11 @@ public class DoCommandService extends Service  {
                             break;
                         case ClientCmd.STOP_SERVICE:
                             stopSelf();
+                            break;
+                        case ClientCmd.REQ_APP_ADS_STATE:
+                            JSONObject sendjo = new JSONObject(mCurAdsStateStr);
+                            sendjo.put("cmd", WSConnectCmd.ServerCmd.NEW_ADS_PUSH_MSG);
+                            sendMsgToClient(sendjo.toString());
                             break;
                         default: break;
                     }

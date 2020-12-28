@@ -4,6 +4,7 @@ import android.util.Log;
 
 import com.fear1ess.reyunaditool.DoCommandService;
 import com.fear1ess.reyunaditool.ExecuteCmdUtils;
+import com.fear1ess.reyunaditool.IDoCommandService;
 import com.fear1ess.reyunaditool.server.NanoWSD;
 import com.fear1ess.reyunaditool.state.AppState;
 import com.fear1ess.reyunaditool.utils.PushMsgUtils;
@@ -26,17 +27,12 @@ public class RemoveAppProceduce implements Runnable {
 
     @Override
     public void run() {
-        try {
-            NanoWSD.WebSocket webSocket = mService.getWebSocket();
-            String msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
-                    AppState.APP_REMOVING);
-            mService.getWebSocket().send(msg);
-            removeApp();
-            msg = PushMsgUtils.createPushMsg(mPkgName, null, null, AppState.APP_REMOVED);
-            mService.getWebSocket().send(msg);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        String msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
+                AppState.APP_REMOVING);
+
+        removeApp();
+        msg = PushMsgUtils.createPushMsg(mPkgName, null, null, AppState.APP_REMOVED);
+        mService.sendMsgToClient(msg);
     }
 
     public void removeApp(){

@@ -21,6 +21,7 @@ import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import javax.net.ssl.HostnameVerifier;
@@ -31,6 +32,18 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
 public class NetWorkUtils {
+
+    public interface NetWorkCallback {
+        void onDownloadPkgNameGetSuccess(String name);
+        void onDownloadPkgNameGetfailed();
+        void onDownloadBytesUpdate (String name, int bytesDownloaded);
+    }
+
+    private static NetWorkCallback callback;
+
+    public static void setNetWorkCallback(NetWorkCallback cb) {
+        callback = cb;
+    }
 
     private static Response get(String urlStr,HashMap<String,String> headers,OutputStream os){
         if(os == null){
@@ -85,11 +98,14 @@ public class NetWorkUtils {
         return null;
     }
 
-    private static Response httpReq(String urlStr, HashMap<String,String> headers, byte[] postData,OutputStream os){
-        URL getAppInfoUrl = null;
+    private static Response httpReq(String urlStr, HashMap<String,String> headers, byte[] postData,OutputStream os) {
+        boolean isDownload = false;
+        if(os instanceof FileOutputStream) {
+            isDownload = true;
+        }
         Response res = null;
         try {
-            getAppInfoUrl = new URL(urlStr);
+            URL getAppInfoUrl = new URL(urlStr);
             HttpURLConnection huc = (HttpURLConnection) getAppInfoUrl.openConnection();
             if(postData == null) huc.setRequestMethod("GET");
             else huc.setRequestMethod("POST");
@@ -105,18 +121,33 @@ public class NetWorkUtils {
                 out.write(postData);
                 out.flush();
             }
+            String fileName = huc.getHeaderField("Content-Disposition");
+            if(fileName == null){
+                callback.onDownloadPkgNameGetfailed();
+            }
+            String pkgName = fileName.replace("attachment; filename=","")
+                    .replace(".apk", "");
+            if(isDownload){
+                callback.onDownloadPkgNameGetSuccess(fileName);
+            }
             InputStream is = huc.getInputStream();
-            byte[] data = new byte[1024];
+            byte[] data = new byte[4096];
             int len = 0;
+            int totalBytes = 0;
             while((len = is.read(data)) != -1){
                 os.write(data,0,len);
+                totalBytes += len;
+                if(isDownload){
+                    if(fileName != null) {
+                        callback.onDownloadBytesUpdate(fileName, totalBytes);
+                    }
+                }
             }
             os.flush();
             byte[] resData = null;
             if(os instanceof ByteArrayOutputStream) {
                 resData = ((ByteArrayOutputStream) os).toByteArray();
             }
-            String fileName = huc.getHeaderField("Content-Disposition");
             res = new Response(huc.getResponseCode(),huc.getResponseMessage(),resData,fileName);
             os.close();
             is.close();

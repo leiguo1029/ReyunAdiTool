@@ -68,12 +68,15 @@ public class ExecuteCmdUtils {
     public static int startApp(Context appContext, String packageName) {
         PackageManager pm = appContext.getPackageManager();
         Intent intent = pm.getLaunchIntentForPackage(packageName);
+        if(intent == null) return -1;
         ComponentName cn = intent.getComponent();
         String pkgName = cn.getPackageName();
         String className = cn.getClassName();
-        //  intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        Log.d(TAG, "startApp " + packageName);
-        String cmd = "am start -n " + pkgName + "/" + className;
-        return executeCmd(cmd);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        appContext.startActivity(intent);
+        return 0;
+     //   Log.d(TAG, "startApp " + packageName);
+     //   String cmd = "am start -n " + pkgName + "/" + className;
+      //  return executeCmd(cmd);
     }
 }
