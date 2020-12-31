@@ -26,8 +26,6 @@
             android:process=":HandleAppService"
             android:exported="true">
         </service>
-
-
     </application>
 
 </manifest>

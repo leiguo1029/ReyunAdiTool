@@ -12,8 +12,13 @@ import com.fear1ess.reyunaditool.NetWorkUtils;
 import com.fear1ess.reyunaditool.state.AppState;
 import com.fear1ess.reyunaditool.utils.PushMsgUtils;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 
 
@@ -105,6 +110,8 @@ public class DownloadThread extends Thread {
             String newPath = downloadDir + "/" + pkgName + ".apk";
             renameFile(downloadPath, newPath);
 
+            uploadDownLoadSuccessData(pkgName);
+
             try {
                 mAppInfoQueue.put(new AppInfo(pkgName, newPath));
                 String msg = PushMsgUtils.createPushMsg(pkgName, null, null,
@@ -114,6 +121,20 @@ public class DownloadThread extends Thread {
                 e.printStackTrace();
             }
         }
+    }
+
+    public void uploadDownLoadSuccessData(String pkgName) {
+        Log.d(TAG, "start upload download success data...");
+        ExecutorService es = Executors.newSingleThreadExecutor();
+        JSONObject jo = new JSONObject();
+        try {
+            jo.put("app_id", pkgName);
+            jo.put("download_success", 1);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        es.execute(new UploadAdsDataProceduce(jo.toString()));
+        es.shutdown();
     }
 
     public void setNetWorkCallback() {

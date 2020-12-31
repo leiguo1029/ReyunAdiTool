@@ -44,9 +44,10 @@ public class DoCommandService extends Service  {
     private String mCurDownloadPath;
 
     private String mCurAdsStateStr;
-
+    private WSCommandServer mWSServer;
     private WSCommandServer.WSCommandWebSocket mWebSocket;
     private volatile boolean isWSConnected = false;
+    public volatile boolean isUploadAdsData = false;
 
     private Handler mUiHandler;
 
@@ -101,14 +102,15 @@ public class DoCommandService extends Service  {
         Log.d(TAG, "onStartCommand...");
 
         //start websocket service
-        WSCommandServer chs = new WSCommandServer(2020);
-        try {
+        if(mWSServer == null) {
+            mWSServer = new WSCommandServer(2020);
             Log.d(TAG, "start websocket server on port 2020...");
-            chs.start();
-        } catch (IOException e) {
-            e.printStackTrace();
+            try {
+                mWSServer.start();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
-
         startOperateAppThread();
 
         return Service.START_NOT_STICKY;
@@ -123,18 +125,21 @@ public class DoCommandService extends Service  {
         stopForeground(true);
     }
 
+
     public void startOperateAppThread(){
         Log.d(TAG, "startOperateAppThread...");
         AdiToolApp app = (AdiToolApp) getApplication();
         mUiHandler = app.getUiHandler();
         Context cxt = AdiToolApp.getAppContext();
         ExecutorService es = Executors.newCachedThreadPool();
-        DownloadThread dlt = new DownloadThread(cxt, mUiHandler, this);
-        InstallAndStartAppThread hat = new InstallAndStartAppThread(dlt, cxt, mUiHandler,this);
-        es.execute(dlt);
-        es.execute(hat);
-        mInstallAndStartAppThread = hat;
-        mDownloadAppThread = dlt;
+        if(mDownloadAppThread == null) {
+            mDownloadAppThread = new DownloadThread(cxt, mUiHandler, this);
+            es.execute(mDownloadAppThread);
+        }
+        if(mInstallAndStartAppThread == null) {
+            mInstallAndStartAppThread = new InstallAndStartAppThread(mDownloadAppThread, cxt, mUiHandler,this);
+            es.execute(mInstallAndStartAppThread);
+        }
         es.shutdown();
     }
 
@@ -153,6 +158,28 @@ public class DoCommandService extends Service  {
         mCurDownloadPath = downloadPath;
     }
 
+    public void uploadAdsData(String str) {
+        Log.d(TAG, "start upload ads data: " + str);
+        ExecutorService es = Executors.newSingleThreadExecutor();
+        es.execute(new UploadAdsDataProceduce(str));
+        es.shutdown();
+        isUploadAdsData = true;
+    }
+
+    public void uploadErrorApkData() {
+        Log.d(TAG, "start upload empty ads data...");
+        ExecutorService es = Executors.newSingleThreadExecutor();
+        JSONObject jo = new JSONObject();
+        try {
+            jo.put("app_id", mCurPkgName);
+            jo.put("apk_error", 1);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        es.execute(new UploadAdsDataProceduce(jo.toString()));
+        es.shutdown();
+    }
+
     public class DoCommandBinder extends IDoCommandService.Stub{
 
         @Override
@@ -168,10 +195,7 @@ public class DoCommandService extends Service  {
                     return mCurPkgName;
                 }
                 case OperateCmd.UPLOAD_ADSDK_INFO: {
-                    ExecutorService es = Executors.newSingleThreadExecutor();
-                    Log.d(TAG, "start upload ads data: " + str);
-                    es.execute(new UploadAdsDataProceduce(str));
-                    es.shutdown();
+                    uploadAdsData(str);
                     return "success";
                 }
                 case OperateCmd.SHUTDOWN_APP: {
@@ -227,6 +251,7 @@ public class DoCommandService extends Service  {
                     }
                 }
                 Log.d(TAG, "a client success to connect server...");
+                isWSConnected = true;
                 mWebSocket = this;
             }
 

@@ -18,8 +18,13 @@ import com.fear1ess.reyunaditool.cmd.OperateCmd;
 import com.fear1ess.reyunaditool.state.AppState;
 import com.fear1ess.reyunaditool.utils.PushMsgUtils;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
 public class InstallAndStartAppThread extends Thread {
@@ -68,8 +73,12 @@ public class InstallAndStartAppThread extends Thread {
     public void run() {
         while(needRunning){
             try {
+                mService.isUploadAdsData = false;
                 installAndStartNewApp();
-                sleep(80*1000);
+                sleep(60*1000);
+                if(mService.isUploadAdsData == false){
+                    mService.uploadErrorApkData();
+                }
                 removeApp();
             } catch (InterruptedException e) {
                 e.printStackTrace();
@@ -106,7 +115,7 @@ public class InstallAndStartAppThread extends Thread {
         AppInfo appInfo = null;
         try {
             while(true){
-                Thread.sleep(3000);
+                Thread.sleep(2000);
                 appInfo = mDownloadThread.mAppInfoQueue.take();
 
                 mPkgName = appInfo.mPkgName;
@@ -124,6 +133,7 @@ public class InstallAndStartAppThread extends Thread {
                     if(res == 0){
                         Log.d(TAG, "install app " + mPkgName + "success!");
                     } else {
+                        mService.uploadErrorApkData();
                         Log.e(TAG, "install app " + mPkgName + " failed!");
                         if(ExecuteCmdUtils.deletePkg(mDownloadPath) != 0){
                             Log.e(TAG, "delete pkg " + mDownloadPath + " failed!");
@@ -141,12 +151,18 @@ public class InstallAndStartAppThread extends Thread {
                 //send app installed msg, update appname and appicon...
                 PackageManager pm = appContext.getPackageManager();
                 ApplicationInfo info = PushMsgUtils.getApplicationInfo(mPkgName);
-                msg = PushMsgUtils.createPushMsg(mPkgName, info.loadLabel(pm).toString(), info.loadIcon(pm),
-                        AppState.APP_INSTALLED_AND_OPEN);
-                mService.sendMsgToClient(msg);
+                if(info != null) {
+                    msg = PushMsgUtils.createPushMsg(mPkgName, info.loadLabel(pm).toString(), info.loadIcon(pm),
+                            AppState.APP_INSTALLED_AND_OPEN);
+                    mService.sendMsgToClient(msg);
+                }
 
                 if(ExecuteCmdUtils.startApp(appContext,mPkgName) != 0){
                     Log.e(TAG, "start app " + mPkgName + " failed!");
+                    mService.uploadErrorApkData();
+                    msg = PushMsgUtils.createPushMsg(mPkgName, null, null,
+                            AppState.APP_INSTALL_FAILED);
+                    mService.sendMsgToClient(msg);
                     if(ExecuteCmdUtils.uninstallApp(mPkgName) != 0){
                         Log.e(TAG, "uninstall app " + mPkgName + " failed!");
                     }

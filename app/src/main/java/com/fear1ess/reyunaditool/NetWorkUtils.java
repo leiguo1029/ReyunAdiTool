@@ -1,6 +1,7 @@
 package com.fear1ess.reyunaditool;
 
 import android.content.res.Resources;
+import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -104,17 +105,22 @@ public class NetWorkUtils {
             isDownload = true;
         }
         Response res = null;
+        HttpURLConnection huc = null;
         try {
             URL getAppInfoUrl = new URL(urlStr);
-            HttpURLConnection huc = (HttpURLConnection) getAppInfoUrl.openConnection();
+            huc = (HttpURLConnection) getAppInfoUrl.openConnection();
             if(postData == null) huc.setRequestMethod("GET");
-            else huc.setRequestMethod("POST");
+            else {
+                huc.setRequestMethod("POST");
+                huc.setRequestProperty("Content-Type", "application/json");
+            }
             if(headers != null){
                 for(Map.Entry<String,String> entry:headers.entrySet()){
                     huc.setRequestProperty(entry.getKey(),entry.getValue());
                 }
             }
             huc.setConnectTimeout(5000);
+            huc.setReadTimeout(10000);
             huc.connect();
             if(postData != null){
                 OutputStream out = huc.getOutputStream();
@@ -124,14 +130,16 @@ public class NetWorkUtils {
             String fileName = huc.getHeaderField("Content-Disposition");
             if(fileName == null){
                 callback.onDownloadPkgNameGetfailed();
+                huc.disconnect();
+                return null;
             }
             String pkgName = fileName.replace("attachment; filename=","")
                     .replace(".apk", "");
             if(isDownload){
-                callback.onDownloadPkgNameGetSuccess(fileName);
+                callback.onDownloadPkgNameGetSuccess(pkgName);
             }
             InputStream is = huc.getInputStream();
-            byte[] data = new byte[4096];
+            byte[] data = new byte[8192];
             int len = 0;
             int totalBytes = 0;
             while((len = is.read(data)) != -1){
@@ -139,7 +147,7 @@ public class NetWorkUtils {
                 totalBytes += len;
                 if(isDownload){
                     if(fileName != null) {
-                        callback.onDownloadBytesUpdate(fileName, totalBytes);
+                        callback.onDownloadBytesUpdate(pkgName, totalBytes);
                     }
                 }
             }
@@ -148,10 +156,7 @@ public class NetWorkUtils {
             if(os instanceof ByteArrayOutputStream) {
                 resData = ((ByteArrayOutputStream) os).toByteArray();
             }
-            res = new Response(huc.getResponseCode(),huc.getResponseMessage(),resData,fileName);
-            os.close();
-            is.close();
-            huc.disconnect();
+            res = new Response(huc.getResponseCode(),huc.getResponseMessage(),resData,pkgName);
         } catch (MalformedURLException e) {
             e.printStackTrace();
         } catch (UnsupportedEncodingException e) {
@@ -160,8 +165,18 @@ public class NetWorkUtils {
             e.printStackTrace();
         } catch (IOException e) {
             e.printStackTrace();
+        } finally {
+            try {
+                os.close();
+                huc.getInputStream().close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }finally {
+                Log.d("aditool", "close httpconnection.... ");
+                huc.disconnect();
+                return res;
+            }
         }
-        return res;
     }
 
 
@@ -190,7 +205,7 @@ public class NetWorkUtils {
                 out.flush();
             }
             InputStream is = huc.getInputStream();
-            byte[] data = new byte[1024];
+            byte[] data = new byte[8192];
            // ByteArrayOutputStream bo = new ByteArrayOutputStream();
             int len = 0;
             while((len = is.read(data)) != -1){

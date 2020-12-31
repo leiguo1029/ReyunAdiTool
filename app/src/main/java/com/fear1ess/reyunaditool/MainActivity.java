@@ -21,7 +21,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
-    public Handler mHandler = new MainActivityHandler(this);
 
 
     @RequiresApi(api = Build.VERSION_CODES.O)
@@ -31,7 +30,6 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         AdiToolApp app = (AdiToolApp) getApplication();
-        app.setUiHandler(mHandler);
 
         Button startBtn = findViewById(R.id.start_btn);
         Button stopBtn = findViewById(R.id.stop_btn);
@@ -48,7 +46,7 @@ public class MainActivity extends AppCompatActivity {
                 startBtn.setEnabled(false);
                 stopBtn.setEnabled(true);
                 Context cxt = AdiToolApp.getAppContext();
-                cxt.startForegroundService(new Intent(cxt, DoCommandService.class));
+                startForegroundService(new Intent(MainActivity.this, DoCommandService.class));
             }
         });
 
@@ -62,6 +60,23 @@ public class MainActivity extends AppCompatActivity {
                 stopBtn.setEnabled(false);
             }
         });
+
+        new Thread(){
+            @Override
+            public void run() {
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        startBtn.performClick();
+                    }
+                });
+            }
+        }.start();
     }
 
     public static class MainActivityHandler extends Handler{

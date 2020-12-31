@@ -18,5 +18,6 @@ public class UploadAdsDataProceduce implements Runnable {
     public void run() {
         Log.d(TAG, "ready to post appInfo to server, data: " + mData);
         NetWorkUtils.post(postAppInfoUrlStr, null, mData.getBytes());
+
     }
 }
